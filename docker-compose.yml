@@ -1,0 +1,25 @@
+version: '3'
+
+services:
+  rippy_main:
+    build: .
+    container_name: rippy_main
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+      - ${OUTPUT_DIR:-./data}:/data
+    env_file:
+      - .env
+    command: ${SPOTIFY_PLAYLIST_URL} /data
+
+  # Example of additional playlist (uncomment to use)
+  # rippy_second:
+  #   build: .
+  #   container_name: rippy_second
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./config:/app/config
+  #     - ${OUTPUT_DIR_2:-./data2}:/data
+  #   env_file:
+  #     - .env_second
+  #   command: ${SPOTIFY_PLAYLIST_URL_2} /data
