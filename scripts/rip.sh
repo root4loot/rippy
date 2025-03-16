@@ -41,8 +41,9 @@ download_from_service() {
   local service="$3"
   local artist="$4"
   local title="$5"
+  local attempt="$6"
   
-  echo "INFO: Trying to download from $service..." >&2
+  echo "INFO: Trying to download from $service (attempt $attempt)..." >&2
   
   local encoded_url=$(urlencode "$spotify_url")
   local lucida_url="https://lucida.to/?url=${encoded_url}&country=auto&to=${service}"
@@ -77,7 +78,7 @@ download_from_service() {
   echo "INFO: Service URL: $service_url" >&2
   
   local current_time=$(date +%s)
-  local expiry=$((current_time + 86400)) # 24 hours
+  local expiry=$((current_time + 86400))
   
   local post_data='{
     "url":"'"$service_url"'",
@@ -119,9 +120,12 @@ download_from_service() {
   echo "INFO: Got handoff ID: $request_id on server: $server_name. Polling for status..." >&2
   
   local status="started"
+  local poll_count=0
+  local max_polls=120
 
-  while [[ "$status" != "completed" ]]; do
+  while [[ "$status" != "completed" && $poll_count -lt $max_polls ]]; do
     sleep 2
+    ((poll_count++))
     
     local status_response=$(curl -s "https://$server_name.lucida.to/api/fetch/request/$request_id")
     echo "DEBUG: Status response: $status_response" >&2
@@ -145,6 +149,11 @@ download_from_service() {
       return 1
     fi
   done
+  
+  if [[ "$status" != "completed" ]]; then
+    echo "ERROR: Download timed out" >&2
+    return 1
+  fi
   
   echo "INFO: Download marked as completed, retrieving file..." >&2
   
@@ -196,7 +205,6 @@ rip_track() {
     return 1
   fi
   
-
   if [[ -n "$SPOTIFY_CLIENT_ID" && -n "$SPOTIFY_CLIENT_SECRET" ]]; then
     echo "DEBUG: Using Spotify credentials from environment variables" >&2
   else
@@ -247,23 +255,30 @@ rip_track() {
   echo "INFO: Found track: $artist - $title" >&2
   
   local result=""
+  local max_tidal_retries=3
+  local tidal_retry_delay=30
   
-  # Qobuz
-  result=$(download_from_service "$spotify_url" "$output_dir" "qobuz" "$artist" "$title")
+  result=$(download_from_service "$spotify_url" "$output_dir" "qobuz" "$artist" "$title" "1")
   if [[ $? -eq 0 && -n "$result" ]]; then
     echo "$result"
     return 0
   fi
   
-  # Tidal
-  result=$(download_from_service "$spotify_url" "$output_dir" "tidal" "$artist" "$title")
-  if [[ $? -eq 0 && -n "$result" ]]; then
-    echo "$result"
-    return 0
-  fi
+  for ((retry=1; retry<=max_tidal_retries; retry++)); do
+    result=$(download_from_service "$spotify_url" "$output_dir" "tidal" "$artist" "$title" "$retry")
+    if [[ $? -eq 0 && -n "$result" ]]; then
+      echo "$result"
+      return 0
+    fi
+    
+    if [[ $retry -lt $max_tidal_retries ]]; then
+      echo "INFO: Tidal download failed, retrying in $tidal_retry_delay seconds..." >&2
+      sleep $tidal_retry_delay
+    fi
+  done
   
-  # SoundCloud
-  result=$(download_from_service "$spotify_url" "$output_dir" "soundcloud" "$artist" "$title")
+  echo "INFO: All Tidal attempts failed, trying SoundCloud as last resort" >&2
+  result=$(download_from_service "$spotify_url" "$output_dir" "soundcloud" "$artist" "$title" "1")
   if [[ $? -eq 0 && -n "$result" ]]; then
     echo "$result"
     return 0
