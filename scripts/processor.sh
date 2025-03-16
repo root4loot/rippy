@@ -58,7 +58,7 @@ process_track() {
   fi
   
   ffmpeg_cmd+=" -c:a pcm_s16be"
-  ffmpeg_cmd+=" -ar 44100 -ac 2" # Ensure 44.1kHz 16-bit stereo
+  # ffmpeg_cmd+=" -ar 44100 -ac 2" # Ensure 44.1kHz 16-bit stereo
   ffmpeg_cmd+=" -write_id3v2 1"
   ffmpeg_cmd+=" -metadata comment=\"\" -metadata ICMT=\"\""
   
