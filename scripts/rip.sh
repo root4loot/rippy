@@ -255,7 +255,7 @@ rip_track() {
   echo "INFO: Found track: $artist - $title" >&2
   
   local result=""
-  local max_tidal_retries=3
+  local max_tidal_retries=10
   local tidal_retry_delay=30
   
   result=$(download_from_service "$spotify_url" "$output_dir" "qobuz" "$artist" "$title" "1")
