@@ -43,7 +43,34 @@ process_track() {
   local temp_art_file=""
   if [[ -n "$artwork_file" && -f "$artwork_file" ]]; then
     temp_art_file="${dir_name}/temp_art_$$.jpg"
-    ffmpeg -y -i "$artwork_file" -vf "scale=500:500" "$temp_art_file" >/dev/null 2>&1
+    
+    ffmpeg -y -i "$artwork_file" -vf "scale=min(800,iw):min(800,ih):force_original_aspect_ratio=decrease" "$temp_art_file" >/dev/null 2>&1
+    
+    local art_size=$(du -k "$temp_art_file" | cut -f1)
+    if [[ $art_size -gt 500 ]]; then
+      echo "INFO: Compressing album art to meet CDJ requirements" >&2
+      local compressed_file="${dir_name}/temp_art_compressed_$$.jpg"
+      
+      for quality in 95 90 85 80 75 70; do
+        ffmpeg -y -i "$temp_art_file" -q:v $((30-$quality/5)) "$compressed_file" >/dev/null 2>&1
+        local new_size=$(du -k "$compressed_file" | cut -f1)
+        
+        if [[ $new_size -le 500 ]]; then
+          mv "$compressed_file" "$temp_art_file"
+          break
+        fi
+      done
+      
+      if [[ $(du -k "$temp_art_file" | cut -f1) -gt 500 ]]; then
+        ffmpeg -y -i "$artwork_file" -vf "scale=800:800:force_original_aspect_ratio=decrease" -q:v 10 "$compressed_file" >/dev/null 2>&1
+        mv "$compressed_file" "$temp_art_file"
+      fi
+      
+      if [[ -f "$compressed_file" ]]; then
+        rm -f "$compressed_file"
+      fi
+    fi
+    
     artwork_file="$temp_art_file"
   fi
 
@@ -58,7 +85,6 @@ process_track() {
   fi
   
   ffmpeg_cmd+=" -c:a pcm_s16be"
-  # ffmpeg_cmd+=" -ar 44100 -ac 2" # Ensure 44.1kHz 16-bit stereo
   ffmpeg_cmd+=" -write_id3v2 1"
   ffmpeg_cmd+=" -metadata comment=\"\" -metadata ICMT=\"\""
   
@@ -92,18 +118,3 @@ process_track() {
   echo "{\"path\":\"$output_file\"}"
   return 0
 }
-
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  if [[ $# -lt 1 ]]; then
-    usage
-    exit 1
-  fi
-  
-  if [[ $# -eq 1 ]]; then
-    process_track "$1" "" ""
-  elif [[ $# -eq 2 ]]; then
-    process_track "$1" "$2" ""
-  else
-    process_track "$1" "$2" "$3"
-  fi
-fi
