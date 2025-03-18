@@ -77,10 +77,8 @@ process_track() {
     artwork_file="$temp_art_file"
   fi
 
-  # Clean up any leftover temporary files if the script exits prematurely
   trap 'rm -f "$temp_art_file" "$compressed_file"' EXIT
 
-  # Base ffmpeg command with the non-interactive flag
   local ffmpeg_cmd="ffmpeg -nostdin -i \"$input_file\""
   
   if [[ -n "$artwork_file" && -f "$artwork_file" ]]; then
@@ -91,20 +89,14 @@ process_track() {
     ffmpeg_cmd+=" -disposition:v attached_pic"
   fi
   
+  ffmpeg_cmd+=" -ar 44100"
   ffmpeg_cmd+=" -c:a pcm_s16be"
   ffmpeg_cmd+=" -write_id3v2 1"
   ffmpeg_cmd+=" -metadata comment=\"\" -metadata ICMT=\"\""
-  
-  if [[ -n "$service" ]]; then
-    ffmpeg_cmd+=" -metadata source=\"$service\""
-  fi
-  
-  # Add loglevel to reduce verbose output and -nostats to prevent progress updates
+
   ffmpeg_cmd+=" -loglevel error -nostats -y \"$output_file\""
   
   echo "INFO: Executing command: $ffmpeg_cmd" >&2
-
-  # Use eval to execute the command and capture errors
   eval "$ffmpeg_cmd" 2>/tmp/ffmpeg_error.log
   
   local exit_code=$?
