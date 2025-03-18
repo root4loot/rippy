@@ -41,15 +41,18 @@ process_track() {
   local output_file="${dir_name}/${base_name}.aiff"
   
   local temp_art_file=""
+  local compressed_file=""
+  
   if [[ -n "$artwork_file" && -f "$artwork_file" ]]; then
     temp_art_file="${dir_name}/temp_art_$$.jpg"
     
+    # Redirect both stdout and stderr to /dev/null to suppress warnings
     ffmpeg -y -i "$artwork_file" -vf "scale=min(800,iw):min(800,ih):force_original_aspect_ratio=decrease" "$temp_art_file" >/dev/null 2>&1
     
     local art_size=$(du -k "$temp_art_file" | cut -f1)
     if [[ $art_size -gt 500 ]]; then
       echo "INFO: Compressing album art to meet CDJ requirements" >&2
-      local compressed_file="${dir_name}/temp_art_compressed_$$.jpg"
+      compressed_file="${dir_name}/temp_art_compressed_$$.jpg"
       
       for quality in 95 90 85 80 75 70; do
         ffmpeg -y -i "$temp_art_file" -q:v $((30-$quality/5)) "$compressed_file" >/dev/null 2>&1
@@ -74,7 +77,11 @@ process_track() {
     artwork_file="$temp_art_file"
   fi
 
-  local ffmpeg_cmd="ffmpeg -i \"$input_file\""
+  # Clean up any leftover temporary files if the script exits prematurely
+  trap 'rm -f "$temp_art_file" "$compressed_file"' EXIT
+
+  # Base ffmpeg command with the non-interactive flag
+  local ffmpeg_cmd="ffmpeg -nostdin -i \"$input_file\""
   
   if [[ -n "$artwork_file" && -f "$artwork_file" ]]; then
     echo "INFO: Including album art from $artwork_file" >&2
@@ -92,17 +99,24 @@ process_track() {
     ffmpeg_cmd+=" -metadata source=\"$service\""
   fi
   
-  ffmpeg_cmd+=" -y \"$output_file\""
+  # Add loglevel to reduce verbose output and -nostats to prevent progress updates
+  ffmpeg_cmd+=" -loglevel error -nostats -y \"$output_file\""
   
   echo "INFO: Executing command: $ffmpeg_cmd" >&2
 
-  eval "$ffmpeg_cmd"
+  # Use eval to execute the command and capture errors
+  eval "$ffmpeg_cmd" 2>/tmp/ffmpeg_error.log
   
   local exit_code=$?
   if [[ $exit_code -ne 0 ]]; then
     echo "ERROR: ffmpeg command failed with exit code $exit_code" >&2
+    echo "ERROR: ffmpeg error log:" >&2
+    cat /tmp/ffmpeg_error.log >&2
+    rm -f /tmp/ffmpeg_error.log
     return $exit_code
   fi
+  
+  rm -f /tmp/ffmpeg_error.log
   
   echo "INFO: Successfully converted to AIFF format: $output_file" >&2
   
@@ -111,10 +125,33 @@ process_track() {
     rm -f "$input_file"
   fi
   
+  # Clean up temporary files
   if [[ -n "$temp_art_file" && -f "$temp_art_file" ]]; then
     rm -f "$temp_art_file"
   fi
   
+  if [[ -n "$compressed_file" && -f "$compressed_file" ]]; then
+    rm -f "$compressed_file"
+  fi
+  
+  # Remove trap since we've manually cleaned up
+  trap - EXIT
+  
   echo "{\"path\":\"$output_file\"}"
   return 0
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  if [[ $# -lt 1 ]]; then
+    usage
+    exit 1
+  fi
+  
+  if [[ $# -eq 1 ]]; then
+    process_track "$1" "" ""
+  elif [[ $# -eq 2 ]]; then
+    process_track "$1" "$2" ""
+  else
+    process_track "$1" "$2" "$3"
+  fi
+fi
