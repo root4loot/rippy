@@ -28,7 +28,7 @@ spotify_client_secret = "your_client_secret"
 
 3. **Command line arguments:**
 ```bash
-bash scripts/rippy.sh <url> <dir> --client-id YOUR_ID --client-secret YOUR_SECRET
+bash scripts/rippy.sh "[spotify-playlist-url]" [output-dir] --client-id [spotify-client-id] --client-secret [spotify-client-secret]
 ```
 
 ## Usage
@@ -44,8 +44,8 @@ bash scripts/rippy.sh status
 ### Single Playlist
 
 ```bash
-bash scripts/rippy.sh <spotify_url> <output_dir>
-bash scripts/rippy.sh <spotify_url> <output_dir> --client-id ID --client-secret SECRET
+bash scripts/rippy.sh "[spotify-playlist-url]" [output-dir]
+bash scripts/rippy.sh "[spotify-playlist-url]" [output-dir] --client-id [spotify-client-id] --client-secret [spotify-client-secret]
 ```
 
 ### Docker

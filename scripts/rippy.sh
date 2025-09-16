@@ -385,7 +385,7 @@ run_multiple_playlists() {
 
         *)
             echo "Usage: $0 {start|stop|status|restart}"
-            echo "       $0 <spotify_playlist_url> <output_dir> [options]"
+            echo "       $0 \"[spotify-playlist-url]\" [output-dir] [options]"
             echo ""
             echo "Multi-playlist commands:"
             echo "  start   - Start syncing all playlists defined in playlists.toml"
@@ -394,8 +394,8 @@ run_multiple_playlists() {
             echo "  restart - Restart all playlist syncs"
             echo ""
             echo "Single playlist mode:"
-            echo "  $0 <url> <dir>                                    - Use credentials from file/env"
-            echo "  $0 <url> <dir> --client-id ID --client-secret KEY - Provide credentials directly"
+            echo "  $0 \"[spotify-playlist-url]\" [output-dir]"
+            echo "  $0 \"[spotify-playlist-url]\" [output-dir] --client-id [spotify-client-id] --client-secret [spotify-client-secret]"
             echo ""
             echo "Environment variables:"
             echo "  SPOTIFY_CLIENT_ID     - Spotify app client ID"
