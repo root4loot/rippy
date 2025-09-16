@@ -1,25 +1,44 @@
 version: '3'
 
 services:
-  rippy_main:
+  rippy_playlist1:
     build: .
-    container_name: rippy_main
+    container_name: rippy_playlist1
     restart: unless-stopped
     volumes:
-      - ./config:/app/config
-      - ${OUTPUT_DIR:-./data}:/data
-    env_file:
-      - .env
-    command: ${SPOTIFY_PLAYLIST_URL} /data
+      - ./playlists.toml:/app/playlists.toml:ro
+      - ./secrets.toml:/app/secrets.toml:ro
+      - ./data/playlist1:/data
+    environment:
+      - PLAYLIST_INDEX=1
+    command: /bin/bash -c "
+      url=$$(awk '/^\[\[playlists\]\]/ {count++} count==1 && /^url/ {gsub(/.*= *\"?/, \"\"); gsub(/\".*/, \"\"); print; exit}' /app/playlists.toml) &&
+      /app/scripts/rippy.sh \"$$url\" /data"
 
-  # Example of additional playlist (uncomment to use)
-  # rippy_second:
-  #   build: .
-  #   container_name: rippy_second
-  #   restart: unless-stopped
-  #   volumes:
-  #     - ./config:/app/config
-  #     - ${OUTPUT_DIR_2:-./data2}:/data
-  #   env_file:
-  #     - .env_second
-  #   command: ${SPOTIFY_PLAYLIST_URL_2} /data
+  rippy_playlist2:
+    build: .
+    container_name: rippy_playlist2
+    restart: unless-stopped
+    volumes:
+      - ./playlists.toml:/app/playlists.toml:ro
+      - ./secrets.toml:/app/secrets.toml:ro
+      - ./data/playlist2:/data
+    environment:
+      - PLAYLIST_INDEX=2
+    command: /bin/bash -c "
+      url=$$(awk '/^\[\[playlists\]\]/ {count++} count==2 && /^url/ {gsub(/.*= *\"?/, \"\"); gsub(/\".*/, \"\"); print; exit}' /app/playlists.toml) &&
+      /app/scripts/rippy.sh \"$$url\" /data"
+
+  rippy_playlist3:
+    build: .
+    container_name: rippy_playlist3
+    restart: unless-stopped
+    volumes:
+      - ./playlists.toml:/app/playlists.toml:ro
+      - ./secrets.toml:/app/secrets.toml:ro
+      - ./data/playlist3:/data
+    environment:
+      - PLAYLIST_INDEX=3
+    command: /bin/bash -c "
+      url=$$(awk '/^\[\[playlists\]\]/ {count++} count==3 && /^url/ {gsub(/.*= *\"?/, \"\"); gsub(/\".*/, \"\"); print; exit}' /app/playlists.toml) &&
+      /app/scripts/rippy.sh \"$$url\" /data"

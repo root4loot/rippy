@@ -1,0 +1,20 @@
+[global]
+sync_interval = 3600
+download_interval = 60
+keep_artwork = false
+log_level = "INFO"
+
+[[playlists]]
+name = "My First Playlist"
+url = "https://open.spotify.com/playlist/your_playlist_id_1"
+output_dir = "./data/playlist1"
+
+[[playlists]]
+name = "My Second Playlist"
+url = "https://open.spotify.com/playlist/your_playlist_id_2"
+output_dir = "./data/playlist2"
+
+[[playlists]]
+name = "My Third Playlist"
+url = "https://open.spotify.com/playlist/your_playlist_id_3"
+output_dir = "./data/playlist3"

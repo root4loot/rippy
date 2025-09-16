@@ -1,7 +1,7 @@
 #!/bin/bash
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_DIR="$(cd "$SCRIPT_DIR/../config" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 usage() {
   echo "Usage: $0 <spotify_track_url> <output_dir>"
@@ -208,8 +208,8 @@ rip_track() {
   if [[ -n "$SPOTIFY_CLIENT_ID" && -n "$SPOTIFY_CLIENT_SECRET" ]]; then
     echo "DEBUG: Using Spotify credentials from environment variables" >&2
   else
-    if [[ -f "$CONFIG_DIR/secrets.conf" ]]; then
-      source "$CONFIG_DIR/secrets.conf"
+    if [[ -f "$ROOT_DIR/secrets.conf" ]]; then
+      source "$ROOT_DIR/secrets.conf"
       echo "DEBUG: Using Spotify credentials from config: ID=$SPOTIFY_CLIENT_ID" >&2
     else
       echo "ERROR: Spotify credentials not found in environment or secrets file" >&2

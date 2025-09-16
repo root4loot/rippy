@@ -1,7 +1,8 @@
 #!/bin/bash
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SECRETS_FILE="$(cd "$SCRIPT_DIR/../config" && pwd)/secrets.conf"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SECRETS_FILE="$ROOT_DIR/secrets.conf"
 
 load_spotify_secrets() {
   if [[ -n "$SPOTIFY_CLIENT_ID" && -n "$SPOTIFY_CLIENT_SECRET" ]]; then
@@ -92,7 +93,6 @@ get_spotify_playlist_tracks() {
         continue
       fi
       
-      # Extract relevant fields
       local track_id=$(echo "$track_info" | jq -r '.id')
       local track_name=$(echo "$track_info" | jq -r '.name')
       local artist_name=$(echo "$track_info" | jq -r '.artists[0].name')

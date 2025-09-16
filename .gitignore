@@ -1,4 +1,9 @@
 .*
 .env
 !.gitignore
-config/secrets.conf
+secrets.conf
+secrets.toml
+playlists.toml
+rippy.conf
+.playlist_pids
+logs/
