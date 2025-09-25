@@ -122,7 +122,25 @@ process_track() {
   rm -f /tmp/ffmpeg_error.log
   
   echo "INFO: Successfully converted to AIFF format: $output_file" >&2
-  
+
+  # Extract clean metadata and rename file for consistent naming (especially important for SoundCloud)
+  local clean_artist=$(ffprobe -v quiet -show_entries format_tags=artist -of default=noprint_wrappers=1:nokey=1 "$output_file" 2>/dev/null | head -1)
+  local clean_title=$(ffprobe -v quiet -show_entries format_tags=title -of default=noprint_wrappers=1:nokey=1 "$output_file" 2>/dev/null | head -1)
+
+  if [[ -n "$clean_artist" && -n "$clean_title" ]]; then
+    # Create clean filename from metadata
+    local safe_artist=$(echo "$clean_artist" | sed 's/[\/]/_/g' | sed 's/[[:space:]]*$//g')
+    local safe_title=$(echo "$clean_title" | sed 's/[\/]/_/g' | sed 's/[[:space:]]*$//g')
+    local clean_filename="${safe_artist} - ${safe_title}.aiff"
+    local clean_output="${dir_name}/${clean_filename}"
+
+    if [[ "$clean_output" != "$output_file" ]]; then
+      echo "INFO: Renaming to clean metadata-based filename: $clean_filename" >&2
+      mv "$output_file" "$clean_output"
+      output_file="$clean_output"
+    fi
+  fi
+
   if [[ "$input_file" != "$output_file" ]]; then
     echo "INFO: Removing original file: $input_file" >&2
     rm -f "$input_file"
@@ -139,7 +157,8 @@ process_track() {
   
   # Remove trap since we've manually cleaned up
   trap - EXIT
-  
+
+  # Return the final output file path (may have been renamed for clean metadata)
   echo "{\"path\":\"$output_file\"}"
   return 0
 }
