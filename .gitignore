@@ -2,8 +2,11 @@
 .env
 !.gitignore
 secrets.conf
+my_playlists.txt
 secrets.toml
 playlists.toml
 rippy.conf
 .playlist_pids
+.soundcloud_tokens
+.spotify_tokens
 logs/
