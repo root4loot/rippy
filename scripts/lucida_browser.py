@@ -79,7 +79,7 @@ def get_redirect_with_browser(driver, spotify_url, service):
 
     time.sleep(3)
 
-    wait = WebDriverWait(driver, 30)
+    wait = WebDriverWait(driver, 60)  # Increased for Cloudflare challenges
 
     try:
         wait.until(lambda driver: driver.current_url != lucida_url)

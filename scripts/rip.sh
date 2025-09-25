@@ -138,7 +138,7 @@ download_from_service() {
 
   local status="started"
   local poll_count=0
-  local max_polls=120
+  local max_polls=300  # 10 minutes for large FLAC files
 
   while [[ "$status" != "completed" && $poll_count -lt $max_polls ]]; do
     sleep 2
@@ -409,7 +409,7 @@ rip_soundcloud_track() {
   # Poll for completion
   local status="started"
   local poll_count=0
-  local max_polls=120
+  local max_polls=300  # 10 minutes for large FLAC files
 
   while [[ "$status" != "completed" && $poll_count -lt $max_polls ]]; do
     sleep 2
