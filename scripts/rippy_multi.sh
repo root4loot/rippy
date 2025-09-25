@@ -319,12 +319,20 @@ sync_soundcloud_playlist() {
   fi
 
   # Use same diff logic as Spotify - find files that need downloading
+  log_info "[$name] Scanning local files in $output_dir"
   local local_files=()
   if [[ -d "$output_dir" ]]; then
     while IFS= read -r file; do
       local basename="${file%.*}"
       local_files+=("$basename")
+      log_info "[$name] DEBUG: Found local file: $basename"
     done < <(find "$output_dir" -type f \( -name "*.wav" -o -name "*.aiff" \) 2>/dev/null | xargs -I {} basename {} | sort)
+  fi
+
+  if [[ ${#local_files[@]} -eq 0 ]]; then
+    log_info "[$name] DEBUG: No audio files found in $output_dir"
+  else
+    log_info "[$name] DEBUG: Found ${#local_files[@]} local audio files"
   fi
 
   local tracks_to_download=""
@@ -346,15 +354,23 @@ sync_soundcloud_playlist() {
       local norm_local=$(echo "$local_file" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9 ]//g' -e 's/[[:space:]]\+/ /g')
 
       # Same matching logic as diff.sh
-      if [[ "$norm_local" == "$norm_filename" ]] || [[ "$norm_local" == *"$artist"* && "$norm_local" == *"$title"* ]]; then
+      if [[ "$norm_local" == "$norm_filename" ]]; then
+        echo "DEBUG: EXACT MATCH: $local_file = $artist - $title" >&2
+        found=true
+        break
+      elif [[ "$norm_local" == *"$artist"* && "$norm_local" == *"$title"* ]]; then
+        echo "DEBUG: PARTIAL MATCH: $local_file contains $artist and $title" >&2
         found=true
         break
       fi
     done
 
     if [[ "$found" == "false" ]]; then
+      echo "DEBUG: No match found - marking for download: $artist - $title" >&2
       echo "$track_json" | jq -c --arg action "download" '. + {action: $action}'
       ((download_count++))
+    else
+      echo "DEBUG: Match found - skipping: $artist - $title" >&2
     fi
   done <<< "$(echo "$sc_tracks" | grep '^{')" > /tmp/sc_tracks_to_download
 
