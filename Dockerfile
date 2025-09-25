@@ -1,4 +1,4 @@
-# Dockerfile
+# Universal Dockerfile for rippy
 FROM python:3.10-slim
 
 # Install system dependencies
@@ -12,11 +12,12 @@ RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     unzip \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chrome
+# Install Chrome (let Docker handle architecture)
 RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
+    && sh -c 'echo "deb http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
     && apt-get update \
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
@@ -30,4 +31,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN chmod +x scripts/*.sh scripts/*.py
 
-ENTRYPOINT ["bash", "scripts/rippy.sh"]
+# Create output directory
+RUN mkdir -p /output
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["bash"]
