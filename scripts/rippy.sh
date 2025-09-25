@@ -338,6 +338,64 @@ run_single_playlist() {
     done
 }
 
+run_from_playlist_file() {
+    local playlist_file="$1"
+    local output_base_dir="${2:-$ROOT_DIR/music}"
+
+    if [[ ! -f "$playlist_file" ]]; then
+        log_error "Playlist file not found: $playlist_file"
+        exit 1
+    fi
+
+    load_config_legacy
+    load_secrets
+
+    # Override with command line options if provided
+    SYNC_INTERVAL=${SYNC_INTERVAL:-300}  # Default 5 minutes between syncs
+    DOWNLOAD_INTERVAL=${DOWNLOAD_INTERVAL:-30}  # Default 30 seconds between downloads
+
+    log_info "Starting multi-playlist sync from file: $playlist_file"
+    log_info "Output directory: $output_base_dir"
+    log_info "Sync interval: $SYNC_INTERVAL seconds"
+    log_info "Download interval: $DOWNLOAD_INTERVAL seconds"
+
+    mkdir -p "$ROOT_DIR/logs"
+    mkdir -p "$output_base_dir"
+
+    # Stop any existing syncs
+    stop_all_syncs
+
+    local playlist_count=0
+    while IFS= read -r line; do
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+        # Extract just the URL (remove any whitespace)
+        local url=$(echo "$line" | grep -o 'https://open.spotify.com/playlist/[^[:space:]]*' | head -1)
+
+        if [[ -n "$url" ]]; then
+            ((playlist_count++))
+            local playlist_id=$(echo "$url" | sed 's|.*/playlist/||;s|?.*||')
+            local playlist_name="playlist_${playlist_count}_${playlist_id:0:8}"
+            local output_dir="${output_base_dir}/${playlist_name}"
+
+            log_info "Starting sync for playlist #${playlist_count}: $url"
+            start_playlist_sync "$playlist_name" "$url" "$output_dir"
+            sleep 2
+        fi
+    done < "$playlist_file"
+
+    if [[ $playlist_count -eq 0 ]]; then
+        log_error "No valid playlist URLs found in $playlist_file"
+        exit 1
+    fi
+
+    log_info "Started $playlist_count playlist syncs"
+    log_info "Use '$0 status' to check status"
+    log_info "Use '$0 stop' to stop all syncs"
+    log_info "Logs are available in: $ROOT_DIR/logs/"
+}
+
 run_multiple_playlists() {
     local command="${1:-start}"
 
@@ -386,6 +444,13 @@ run_multiple_playlists() {
         *)
             echo "Usage: $0 {start|stop|status|restart}"
             echo "       $0 \"[spotify-playlist-url]\" [output-dir] [options]"
+            echo "       $0 --playlist-file [file] --output-dir [dir] [options]"
+            echo ""
+            echo "Multi-playlist from file:"
+            echo "  --playlist-file [file]     File containing playlist URLs (one per line, # for comments)"
+            echo "  --output-dir [dir]         Base output directory for all playlists"
+            echo "  --sync-interval [seconds]  Time between playlist syncs (default: 300)"
+            echo "  --download-interval [secs] Time between track downloads (default: 30)"
             echo ""
             echo "Multi-playlist commands:"
             echo "  start   - Start syncing all playlists defined in playlists.toml"
@@ -395,7 +460,7 @@ run_multiple_playlists() {
             echo ""
             echo "Single playlist mode:"
             echo "  $0 \"[spotify-playlist-url]\" [output-dir]"
-            echo "  $0 \"[spotify-playlist-url]\" [output-dir] --client-id [spotify-client-id] --client-secret [spotify-client-secret]"
+            echo "  $0 \"[spotify-playlist-url]\" [output-dir] --client-id [id] --client-secret [secret]"
             echo ""
             echo "Environment variables:"
             echo "  SPOTIFY_CLIENT_ID     - Spotify app client ID"
@@ -416,6 +481,22 @@ parse_arguments() {
                 export SPOTIFY_CLIENT_SECRET="$2"
                 shift 2
                 ;;
+            --playlist-file)
+                export PLAYLIST_FILE="$2"
+                shift 2
+                ;;
+            --output-dir)
+                export OUTPUT_DIR="$2"
+                shift 2
+                ;;
+            --sync-interval)
+                export SYNC_INTERVAL="$2"
+                shift 2
+                ;;
+            --download-interval)
+                export DOWNLOAD_INTERVAL="$2"
+                shift 2
+                ;;
             *)
                 ARGS+=("$1")
                 shift
@@ -429,7 +510,11 @@ main() {
     parse_arguments "$@"
     set -- "${ARGS[@]}"
 
-    if [[ -f "$ROOT_DIR/playlists.toml" ]] && [[ $# -eq 0 || "$1" =~ ^(start|stop|status|restart)$ ]]; then
+    # If --playlist-file was specified, use that
+    if [[ -n "$PLAYLIST_FILE" ]]; then
+        OUTPUT_DIR=${OUTPUT_DIR:-"$ROOT_DIR/music"}
+        run_from_playlist_file "$PLAYLIST_FILE" "$OUTPUT_DIR"
+    elif [[ -f "$ROOT_DIR/playlists.toml" ]] && [[ $# -eq 0 || "$1" =~ ^(start|stop|status|restart)$ ]]; then
         run_multiple_playlists "$@"
     elif [[ $# -ge 2 ]] && [[ "$1" =~ ^https://open.spotify.com/playlist/ ]]; then
         run_single_playlist "$1" "$2"
