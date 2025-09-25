@@ -42,44 +42,61 @@ download_from_service() {
   local artist="$4"
   local title="$5"
   local attempt="$6"
-  
+
   echo "INFO: Trying to download from $service (attempt $attempt)..." >&2
-  
+
+  # First try with curl
   local encoded_url=$(urlencode "$spotify_url")
   local lucida_url="https://lucida.to/?url=${encoded_url}&country=auto&to=${service}"
-  
+
   echo "INFO: Making initial request to lucida.to (service: $service), waiting for response..." >&2
-  
+
   local redirect_response=$(curl -s -I "$lucida_url" -H "Origin: https://lucida.to")
   local location=$(echo "$redirect_response" | grep -i "Location:" | sed 's/Location: //' | tr -d '\r')
-  
+
+  # Check if we got Cloudflare challenge or no redirect
+  if [[ -z "$location" ]] || [[ "$redirect_response" == *"cloudflare"* ]] || [[ "$redirect_response" == *"cf-ray"* ]]; then
+    echo "INFO: Detected Cloudflare protection, using browser-based approach..." >&2
+
+    # Use the Python script with selenium-stealth
+    local result=$(python3 "$SCRIPT_DIR/lucida_browser.py" "$spotify_url" "$service" "$artist" "$title" "$output_dir" 2>&1)
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
+      # Extract just the JSON result from the output
+      local json_result=$(echo "$result" | grep '^{' | tail -1)
+      if [[ -n "$json_result" ]]; then
+        echo "$json_result"
+        return 0
+      fi
+    fi
+
+    echo "ERROR: Browser-based download failed" >&2
+    return 1
+  fi
+
   echo "INFO: Received response from lucida.to" >&2
-  
+
   if [[ "$location" == *"failed-to=$service"* ]]; then
     echo "INFO: Track not available on $service" >&2
     return 1
   fi
 
-  if [[ -z "$location" ]]; then
-    echo "ERROR: No redirect received for $service" >&2
-    return 1
-  fi
-  
   echo "INFO: Redirected to: $location" >&2
 
   local service_url=$(echo "$location" | sed 's/.*url=\([^&]*\).*/\1/' | sed 's/%3A/:/g; s/%2F/\//g')
-  
+
   if [[ -z "$service_url" ]]; then
     echo "ERROR: Failed to extract service URL from redirect" >&2
     echo "DEBUG: Location header: $location" >&2
     return 1
   fi
-  
+
   echo "INFO: Service URL: $service_url" >&2
-  
+
   local current_time=$(date +%s)
   local expiry=$((current_time + 86400))
-  
+
   local post_data='{
     "url":"'"$service_url"'",
     "metadata":true,
@@ -91,34 +108,34 @@ download_from_service() {
     "downscale":"original",
     "token":{"primary":"y5STwMUrIXJZ6yb5xYHh3VEiM-c","expiry":'"$expiry"'}
   }'
-  
+
   echo "INFO: Sending POST request to initiate download" >&2
-  
+
   local post_response=$(curl -s -X POST "https://lucida.to/api/load?url=/api/fetch/stream/v2" \
     -H "Content-Type: text/plain;charset=UTF-8" \
     -H "Origin: https://lucida.to" \
     -d "$post_data")
-  
+
   echo "DEBUG: POST response: $post_response" >&2
 
   local request_id=$(json_extract "$post_response" "handoff")
-  
+
   if [[ -z "$request_id" ]]; then
     request_id=$(json_extract "$post_response" "id")
   fi
-  
+
   if [[ -z "$request_id" ]]; then
     echo "ERROR: Failed to get request/handoff ID. Response: $post_response" >&2
     return 1
   fi
-  
+
   local server_name=$(json_extract "$post_response" "name")
   if [[ -z "$server_name" ]]; then
     server_name="hund"
   fi
-  
+
   echo "INFO: Got handoff ID: $request_id on server: $server_name. Polling for status..." >&2
-  
+
   local status="started"
   local poll_count=0
   local max_polls=120
@@ -126,10 +143,10 @@ download_from_service() {
   while [[ "$status" != "completed" && $poll_count -lt $max_polls ]]; do
     sleep 2
     ((poll_count++))
-    
+
     local status_response=$(curl -s "https://$server_name.lucida.to/api/fetch/request/$request_id")
     echo "DEBUG: Status response: $status_response" >&2
-    
+
     status=$(json_extract "$status_response" "status")
     local message=$(json_extract "$status_response" "message")
 
@@ -141,7 +158,7 @@ download_from_service() {
         status="error"
       fi
     fi
-    
+
     echo "INFO: Status: $status - $message" >&2
 
     if [[ "$status" == "error" || "$status" == "failed" ]]; then
@@ -149,14 +166,14 @@ download_from_service() {
       return 1
     fi
   done
-  
+
   if [[ "$status" != "completed" ]]; then
     echo "ERROR: Download timed out" >&2
     return 1
   fi
-  
+
   echo "INFO: Download marked as completed, retrieving file..." >&2
-  
+
   local safe_artist=$(echo "$artist" | sed 's/[\/]/_/g')
   local safe_title=$(echo "$title" | sed 's/[\/]/_/g')
   local output_file="$output_dir/${safe_artist} - ${safe_title}"
@@ -164,11 +181,11 @@ download_from_service() {
   if [[ "$service" == "soundcloud" ]]; then
     extension="mp3"
   fi
-  
+
   curl -s "https://$server_name.lucida.to/api/fetch/request/$request_id/download" \
     -H "Origin: https://lucida.to" \
     -o "${output_file}.${extension}"
-  
+
   if [[ $? -eq 0 && -f "${output_file}.${extension}" && -s "${output_file}.${extension}" ]]; then
     echo "INFO: Successfully downloaded to ${output_file}.${extension}" >&2
     echo "{\"path\":\"${output_file}.${extension}\",\"artist\":\"$artist\",\"title\":\"$title\",\"service\":\"$service\"}"
