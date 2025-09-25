@@ -1,7 +1,8 @@
-# My Spotify Playlists
+# My Playlists - Supports both Spotify and SoundCloud
 # Format: One playlist URL per line
 # Lines starting with # are treated as comments
 
+# === SPOTIFY PLAYLISTS ===
 # Today's Top Hits
 https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
 
@@ -14,5 +15,9 @@ https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd
 # Electronic/Dance Playlist
 https://open.spotify.com/playlist/37i9dQZF1DX4dyzvuaRJ0n
 
-# Rock Classics
-https://open.spotify.com/playlist/37i9dQZF1DWXRqgorJj26U
+# === SOUNDCLOUD PLAYLISTS ===
+# SoundCloud playlists (requires OAuth authorization first)
+# https://soundcloud.com/user/sets/playlist-name
+
+# Example SoundCloud playlist:
+# https://soundcloud.com/moen999/sets/m2/s-Nn1jF7BjmGe

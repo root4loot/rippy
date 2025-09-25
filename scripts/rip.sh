@@ -177,6 +177,8 @@ download_from_service() {
   local safe_artist=$(echo "$artist" | sed 's/[\/]/_/g')
   local safe_title=$(echo "$title" | sed 's/[\/]/_/g')
   local output_file="$output_dir/${safe_artist} - ${safe_title}"
+
+  # Download using the service-specific format (lucida handles format automatically)
   local extension="flac"
   if [[ "$service" == "soundcloud" ]]; then
     extension="mp3"
@@ -196,113 +198,311 @@ download_from_service() {
   fi
 }
 
-rip_track() {
+rip_spotify_track() {
   local spotify_url="$1"
   local output_dir="$2"
-  
-  if [[ -z "$spotify_url" ]]; then
-    echo "ERROR: Spotify track URL is required" >&2
-    usage
-    return 1
-  fi
-  
-  if [[ -z "$output_dir" ]]; then
-    echo "ERROR: Output directory is required" >&2
-    usage
-    return 1
-  fi
-  
-  mkdir -p "$output_dir"
-  
+
   echo "INFO: Getting track info from Spotify..." >&2
   local track_id=$(echo "$spotify_url" | grep -o 'track/[a-zA-Z0-9]*' | cut -d'/' -f2)
-  
+
   if [[ -z "$track_id" ]]; then
     echo "ERROR: Invalid Spotify track URL: $spotify_url" >&2
     return 1
   fi
-  
-  if [[ -n "$SPOTIFY_CLIENT_ID" && -n "$SPOTIFY_CLIENT_SECRET" ]]; then
-    echo "DEBUG: Using Spotify credentials from environment variables" >&2
-  else
-    if [[ -f "$ROOT_DIR/secrets.conf" ]]; then
-      source "$ROOT_DIR/secrets.conf"
-      echo "DEBUG: Using Spotify credentials from config: ID=$SPOTIFY_CLIENT_ID" >&2
-    else
-      echo "ERROR: Spotify credentials not found in environment or secrets file" >&2
-      return 1
-    fi
+
+  # Try to load from .env file first
+  if [[ -f "$ROOT_DIR/.env" ]]; then
+    set -a
+    source "$ROOT_DIR/.env"
+    set +a
   fi
-  
+
+  if [[ -z "$SPOTIFY_CLIENT_ID" || -z "$SPOTIFY_CLIENT_SECRET" ]]; then
+    echo "ERROR: Spotify credentials not found" >&2
+    echo "Please provide via environment variables or .env file" >&2
+    return 1
+  fi
+
+  echo "DEBUG: Using Spotify credentials from environment" >&2
+
   local token_response=$(curl -s -X POST "https://accounts.spotify.com/api/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
     -d "grant_type=client_credentials&client_id=$SPOTIFY_CLIENT_ID&client_secret=$SPOTIFY_CLIENT_SECRET")
-  
+
   local access_token=$(json_extract "$token_response" "access_token")
-  
+
   if [[ -z "$access_token" ]]; then
     echo "ERROR: Failed to get Spotify access token. Response: $token_response" >&2
     return 1
   fi
-  
+
   local track_info=$(curl -s -X GET "https://api.spotify.com/v1/tracks/$track_id" \
     -H "Authorization: Bearer $access_token")
-  
+
   local artist=""
   local title=""
-  
+
   if command -v jq >/dev/null 2>&1; then
     artist=$(echo "$track_info" | jq -r '.artists[0].name')
     title=$(echo "$track_info" | jq -r '.name')
   else
     artist=$(echo "$track_info" | sed -n 's/.*"artists":\[{".*"name":"\([^"]*\)".*/\1/p')
     title=$(echo "$track_info" | sed -n 's/.*"name":"\([^"]*\)","popularity".*/\1/p')
-    
+
     if [[ -z "$title" ]]; then
       title=$(echo "$track_info" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | head -1)
     fi
   fi
-  
+
   if [[ -z "$artist" || -z "$title" ]]; then
     echo "ERROR: Failed to extract artist or title from Spotify API response" >&2
     echo "DEBUG: Spotify API response: $track_info" >&2
     return 1
   fi
-  
+
   echo "INFO: Found track: $artist - $title" >&2
-  
+
   local result=""
   local max_tidal_retries=2
   local tidal_retry_delay=10
-  
+
   result=$(download_from_service "$spotify_url" "$output_dir" "qobuz" "$artist" "$title" "1")
   if [[ $? -eq 0 && -n "$result" ]]; then
     echo "$result"
     return 0
   fi
-  
+
   for ((retry=1; retry<=max_tidal_retries; retry++)); do
     result=$(download_from_service "$spotify_url" "$output_dir" "tidal" "$artist" "$title" "$retry")
     if [[ $? -eq 0 && -n "$result" ]]; then
       echo "$result"
       return 0
     fi
-    
+
     if [[ $retry -lt $max_tidal_retries ]]; then
       echo "INFO: Tidal download failed, retrying in $tidal_retry_delay seconds..." >&2
       sleep $tidal_retry_delay
     fi
   done
-  
+
   echo "INFO: All Tidal attempts failed, trying SoundCloud as last resort" >&2
   result=$(download_from_service "$spotify_url" "$output_dir" "soundcloud" "$artist" "$title" "1")
   if [[ $? -eq 0 && -n "$result" ]]; then
     echo "$result"
     return 0
   fi
-  
+
   echo "ERROR: Failed to download track from any service" >&2
   return 1
+}
+
+rip_soundcloud_track() {
+  local soundcloud_url="$1"
+  local output_dir="$2"
+
+  echo "INFO: Processing SoundCloud track: $soundcloud_url" >&2
+
+  # We'll get the proper artist/title from SoundCloud API via the playlist
+  # For now, extract basic info from URL as fallback
+  local url_path=$(echo "$soundcloud_url" | sed 's|.*soundcloud.com/||; s|?.*||')
+  local url_artist=$(echo "$url_path" | cut -d'/' -f1)
+  local url_title=$(echo "$url_path" | cut -d'/' -f2 | sed 's|-| |g' | tr '[:lower:]' '[:upper:]')
+
+  # Use URL-derived names as fallback
+  local artist="$url_artist"
+  local title="$url_title"
+
+  echo "INFO: Processing SoundCloud track: $artist - $title" >&2
+
+  local result=""
+
+  # Try SoundCloud -> Tidal first (better quality)
+  echo "INFO: Trying to find track on Tidal for better quality..." >&2
+  result=$(download_from_service "$soundcloud_url" "$output_dir" "tidal" "$artist" "$title" "1")
+  if [[ $? -eq 0 && -n "$result" ]]; then
+    echo "$result"
+    return 0
+  fi
+
+  # If Tidal fails, download directly from SoundCloud (no service parameter)
+  echo "INFO: Tidal not available, downloading directly from SoundCloud..." >&2
+
+  local encoded_url=$(urlencode "$soundcloud_url")
+  local lucida_url="https://lucida.to/?url=${encoded_url}&country=auto"
+
+  echo "INFO: Making request to lucida.to for direct SoundCloud download..." >&2
+
+  local redirect_response=$(curl -s -I "$lucida_url" -H "Origin: https://lucida.to")
+  local location=$(echo "$redirect_response" | grep -i "Location:" | sed 's/Location: //' | tr -d '\r')
+
+  if [[ -z "$location" ]] || [[ "$redirect_response" == *"cloudflare"* ]] || [[ "$redirect_response" == *"cf-ray"* ]]; then
+    echo "INFO: Detected Cloudflare protection, using browser-based approach..." >&2
+
+    # Use the Python script with selenium-stealth
+    local browser_result=$(python3 "$SCRIPT_DIR/lucida_browser.py" "$soundcloud_url" "soundcloud" "$artist" "$title" "$output_dir" 2>&1)
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
+      local json_result=$(echo "$browser_result" | grep '^{' | tail -1)
+      if [[ -n "$json_result" ]]; then
+        echo "$json_result"
+        return 0
+      fi
+    fi
+
+    echo "ERROR: Browser-based download failed" >&2
+    return 1
+  fi
+
+  echo "INFO: Processing direct SoundCloud download..." >&2
+
+  # Process the redirect for direct SoundCloud download
+  local service_url=$(echo "$location" | sed 's/.*url=\([^&]*\).*/\1/' | sed 's/%3A/:/g; s/%2F/\//g')
+
+  if [[ -z "$service_url" ]]; then
+    echo "ERROR: Failed to extract service URL from redirect" >&2
+    return 1
+  fi
+
+  echo "INFO: SoundCloud URL: $service_url" >&2
+
+  local current_time=$(date +%s)
+  local expiry=$((current_time + 86400))
+
+  local post_data='{
+    "url":"'"$service_url"'",
+    "metadata":true,
+    "compat":false,
+    "private":true,
+    "handoff":true,
+    "account":{"type":"country","id":"auto"},
+    "upload":{"enabled":false,"service":"pixeldrain"},
+    "downscale":"original",
+    "token":{"primary":"y5STwMUrIXJZ6yb5xYHh3VEiM-c","expiry":'"$expiry"'}
+  }'
+
+  echo "INFO: Initiating direct SoundCloud download..." >&2
+
+  local post_response=$(curl -s -X POST "https://lucida.to/api/load?url=/api/fetch/stream/v2" \
+    -H "Content-Type: text/plain;charset=UTF-8" \
+    -H "Origin: https://lucida.to" \
+    -d "$post_data")
+
+  local request_id=$(json_extract "$post_response" "handoff")
+
+  if [[ -z "$request_id" ]]; then
+    request_id=$(json_extract "$post_response" "id")
+  fi
+
+  if [[ -z "$request_id" ]]; then
+    echo "ERROR: Failed to get request/handoff ID" >&2
+    return 1
+  fi
+
+  local server_name=$(json_extract "$post_response" "name")
+  if [[ -z "$server_name" ]]; then
+    server_name="hund"
+  fi
+
+  echo "INFO: Got handoff ID: $request_id on server: $server_name" >&2
+
+  # Poll for completion
+  local status="started"
+  local poll_count=0
+  local max_polls=120
+
+  while [[ "$status" != "completed" && $poll_count -lt $max_polls ]]; do
+    sleep 2
+    ((poll_count++))
+
+    local status_response=$(curl -s "https://$server_name.lucida.to/api/fetch/request/$request_id")
+    status=$(json_extract "$status_response" "status")
+
+    if [[ -z "$status" ]]; then
+      local success=$(echo "$status_response" | sed -n 's/.*"success":\s*\([^,}]*\).*/\1/p')
+      if [[ "$success" == "true" ]]; then
+        status="working"
+      else
+        status="error"
+      fi
+    fi
+
+    if [[ "$status" == "error" || "$status" == "failed" ]]; then
+      echo "ERROR: Direct SoundCloud download failed" >&2
+      return 1
+    fi
+  done
+
+  if [[ "$status" != "completed" ]]; then
+    echo "ERROR: Direct SoundCloud download timed out" >&2
+    return 1
+  fi
+
+  # Download the file
+  local safe_artist=$(echo "$artist" | sed 's/[\/]/_/g')
+  local safe_title=$(echo "$title" | sed 's/[\/]/_/g')
+  local output_file="$output_dir/${safe_artist} - ${safe_title}"
+
+  # Try FLAC first (some SoundCloud tracks are FLAC), fallback to MP3
+  local extensions=("flac" "mp3")
+  local downloaded_file=""
+
+  for extension in "${extensions[@]}"; do
+    echo "INFO: Trying to download SoundCloud track as ${extension}..." >&2
+
+    curl -s "https://$server_name.lucida.to/api/fetch/request/$request_id/download" \
+      -H "Origin: https://lucida.to" \
+      -o "${output_file}.${extension}"
+
+    if [[ $? -eq 0 && -f "${output_file}.${extension}" && -s "${output_file}.${extension}" ]]; then
+      local file_size=$(stat -c%s "${output_file}.${extension}" 2>/dev/null || echo "0")
+      if [[ $file_size -gt 1000 ]]; then
+        downloaded_file="${output_file}.${extension}"
+        echo "INFO: Successfully downloaded SoundCloud track as ${extension}: $downloaded_file" >&2
+        break
+      else
+        rm -f "${output_file}.${extension}"
+      fi
+    fi
+  done
+
+  if [[ -n "$downloaded_file" && -f "$downloaded_file" ]]; then
+    echo "{\"path\":\"$downloaded_file\",\"artist\":\"$artist\",\"title\":\"$title\",\"service\":\"soundcloud\"}"
+    return 0
+  else
+    echo "ERROR: Failed to download SoundCloud file" >&2
+    return 1
+  fi
+}
+
+rip_track() {
+  local track_url="$1"
+  local output_dir="$2"
+
+  if [[ -z "$track_url" ]]; then
+    echo "ERROR: Track URL is required" >&2
+    usage
+    return 1
+  fi
+
+  if [[ -z "$output_dir" ]]; then
+    echo "ERROR: Output directory is required" >&2
+    usage
+    return 1
+  fi
+
+  mkdir -p "$output_dir"
+
+  # Detect URL type and call appropriate function
+  if [[ "$track_url" == *"open.spotify.com/track"* ]]; then
+    rip_spotify_track "$track_url" "$output_dir"
+  elif [[ "$track_url" == *"soundcloud.com"* ]]; then
+    rip_soundcloud_track "$track_url" "$output_dir"
+  else
+    echo "ERROR: Unsupported track URL format: $track_url" >&2
+    echo "Supported formats: Spotify track URLs, SoundCloud track URLs" >&2
+    return 1
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

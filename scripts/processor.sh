@@ -45,9 +45,20 @@ process_track() {
   
   if [[ -n "$artwork_file" && -f "$artwork_file" ]]; then
     temp_art_file="${dir_name}/temp_art_$$.jpg"
-    
-    # Redirect both stdout and stderr to /dev/null to suppress warnings
-    ffmpeg -y -i "$artwork_file" -vf "scale=min(800,iw):min(800,ih):force_original_aspect_ratio=decrease" "$temp_art_file" >/dev/null 2>&1
+
+    # Get image dimensions
+    local img_info=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$artwork_file" 2>/dev/null)
+    local img_width=$(echo "$img_info" | cut -d'x' -f1)
+    local img_height=$(echo "$img_info" | cut -d'x' -f2)
+
+    # Only scale if image is larger than 800x800, otherwise copy as-is (perfect for CDJ-2000 Nexus)
+    if [[ "$img_width" -gt 800 || "$img_height" -gt 800 ]]; then
+      echo "INFO: Scaling artwork from ${img_width}x${img_height} to max 800x800" >&2
+      ffmpeg -y -i "$artwork_file" -vf "scale=800:800:force_original_aspect_ratio=decrease" "$temp_art_file" >/dev/null 2>&1
+    else
+      echo "INFO: Keeping artwork at original ${img_width}x${img_height} (CDJ-compatible)" >&2
+      cp "$artwork_file" "$temp_art_file"
+    fi
     
     local art_size=$(du -k "$temp_art_file" | cut -f1)
     if [[ $art_size -gt 500 ]]; then

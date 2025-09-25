@@ -4,34 +4,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 load_spotify_secrets() {
-  # First check environment variables
-  if [[ -n "$SPOTIFY_CLIENT_ID" && -n "$SPOTIFY_CLIENT_SECRET" ]]; then
-    return 0
+  # Try to load from .env file first
+  if [[ -f "$ROOT_DIR/.env" ]]; then
+    set -a
+    source "$ROOT_DIR/.env"
+    set +a
   fi
 
-  # Try secrets.toml first
-  if [[ -f "$ROOT_DIR/secrets.toml" ]]; then
-    SPOTIFY_CLIENT_ID=$(grep '^spotify_client_id' "$ROOT_DIR/secrets.toml" | sed 's/.*= *"//; s/"//')
-    SPOTIFY_CLIENT_SECRET=$(grep '^spotify_client_secret' "$ROOT_DIR/secrets.toml" | sed 's/.*= *"//; s/"//')
-    if [[ -n "$SPOTIFY_CLIENT_ID" && -n "$SPOTIFY_CLIENT_SECRET" ]]; then
-      export SPOTIFY_CLIENT_ID
-      export SPOTIFY_CLIENT_SECRET
-      return 0
-    fi
+  # Check if credentials are available
+  if [[ -z "$SPOTIFY_CLIENT_ID" || -z "$SPOTIFY_CLIENT_SECRET" ]]; then
+    echo "ERROR: Spotify credentials not found. Please provide via:" >&2
+    echo "  - SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables" >&2
+    echo "  - .env file in project root" >&2
+    return 1
   fi
 
-  # Fall back to secrets.conf
-  if [[ -f "$ROOT_DIR/secrets.conf" ]]; then
-    source "$ROOT_DIR/secrets.conf"
-    if [[ -n "$SPOTIFY_CLIENT_ID" && -n "$SPOTIFY_CLIENT_SECRET" ]]; then
-      return 0
-    fi
-  fi
-
-  echo "ERROR: Spotify credentials not found. Please provide via:" >&2
-  echo "  - SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables" >&2
-  echo "  - $ROOT_DIR/secrets.toml or secrets.conf files" >&2
-  return 1
+  return 0
 }
 
 spotify_auth() {
